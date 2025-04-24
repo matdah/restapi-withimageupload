@@ -81,7 +81,7 @@ Content-Type: `multipart/form-data`
   "_id": "...",
   "name": "Emma",
   "email": "emma@example.com",
-  "image": "images/1682628862030-profil.jpg"
+  "image": "http://localhost:3000/images/1682628862030-profil.jpg"
 }
 ```
 
@@ -121,6 +121,7 @@ Content-Type: `multipart/form-data`
 - Validering av e-postformat
 - Begränsa filstorlek (t.ex. max 2MB)
 - Frontend för uppladdning
+- Automatisk skapande av miniatyrer, optimerade bildformat etcetera
 
 ---
 
