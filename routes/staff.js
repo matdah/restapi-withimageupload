@@ -1,64 +1,68 @@
 const express = require('express');
-const multer = require('multer');
 const mongoose = require('mongoose');
 const Staff = require('../models/Staff');
 const router = express.Router();
-const fs = require('fs'); // För att radera filer
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
+require('dotenv').config();
 
-// Spara uppladdade filer i "images/" mappen
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'images/'),
-    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+// Konfigurera Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
-const upload = multer({
-    storage,
-    fileFilter: (req, file, cb) => {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-        if (allowedTypes.includes(file.mimetype)) {
-            cb(null, true); // godkänd
-        } else {
-            cb(new Error('Endast JPEG, PNG och WebP tillåts'), false); // nekad
-        }
-    }
-});
+// Konfigurera Multer för att använda minnet (buffer)
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 // Skapa personal
-router.post('/', (req, res, next) => {
-    upload.single('image')(req, res, function (err) {
-        if (err instanceof multer.MulterError || err?.message) {
-            return res.status(400).json({ error: err.message });
-        }
-        next(); // fortsätt till nedanstående kod
-    });
-}, async (req, res) => {
+router.post('/', upload.single('image'), async (req, res) => {
     try {
-        // Fullständig URL till bilden
-        const imageUrl = `${req.protocol}://${req.get('host')}/${req.file.path}`;
-
-        const staff = new Staff({
-            name: req.body.name,
-            email: req.body.email,
-            image: imageUrl
-        });
-        await staff.save();
-        res.status(201).json(staff);
-    } catch (err) {
         if (req.file) {
-            fs.unlink(req.file.path, (err) => {
-                if (err) console.error('Fel vid radering av fil:', err);
+            // Kontrollera att filtypen är korrekt
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (!allowedTypes.includes(req.file.mimetype)) {
+                return res.status(400).json({ error: 'Endast JPEG, PNG och WebP tillåts.' });
+            }
+
+            // Ladda upp bilden till Cloudinary från buffer
+            const uploadStream = cloudinary.uploader.upload_stream({
+                folder: 'staff_images', // valfri mapp på Cloudinary
+                public_id: `staff_${Date.now()}`, // unikt ID för att undvika kollisioner
+                resource_type: 'auto' // automatisk upptäckt av bildtyp (JPEG, PNG, etc.)
+            }, async (error, result) => {
+                if (error) {
+                    return res.status(500).json({ error: 'Cloudinary uppladdning misslyckades' + ': ' + error.message });
+                }
+
+                // Spara bildens URL i databasen
+                const imageUrl = result.secure_url;
+
+                const staff = new Staff({
+                    name: req.body.name,
+                    email: req.body.email,
+                    image: imageUrl // Spara Cloudinary-URL:en i databasen
+                });
+
+                try {
+                    await staff.save();
+                    res.status(201).json(staff);
+                } catch (err) {
+                    res.status(400).json({ error: err.message });
+                }
             });
+
+            // Skicka bufferten till Cloudinary
+            uploadStream.end(req.file.buffer);
+        } else {
+            res.status(400).json({ error: 'Ingen bild uppladdad.' });
         }
-        if (err.code === 11000) {
-            return res.status(400).json({ error: `E-postadressen ${req.body.email} finns redan registrerad.` });
-        }
-        if (err.name === 'ValidationError') {
-            return res.status(400).json({ error: 'Samtliga fält är obligatoriska: name, email, image' });
-        }
+    } catch (err) {
         res.status(400).json({ error: err.message });
     }
 });
-
 
 // Hämta alla
 router.get('/', async (req, res) => {

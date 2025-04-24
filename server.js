@@ -13,10 +13,6 @@ const port = process.env.PORT || 3000;
 // Använd JSON-data i anropen
 app.use(express.json());
 
-// Statiska filer
-app.use(express.static('public'));
-app.use('/images', express.static('images')); // Serva bilder
-
 // Aktivera CORS middleware för alla rutter
 app.use(cors());
 
